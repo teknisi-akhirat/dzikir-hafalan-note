@@ -1,15 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   computeStreak,
   formatDateID,
-  formatTime,
+  formatRupiah,
   getDay,
+  isSessionComplete,
   loadAll,
   todayKey,
   updateDay,
   type DayRecord,
+  type ServiceEntry,
 } from "@/lib/yaumiyah-storage";
+import { DZIKIR_PAGI, DZIKIR_PETANG, type DzikirItem } from "@/lib/yaumiyah-dzikir";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -29,32 +32,72 @@ function Home() {
   const [hour, setHour] = useState(12);
   const [hafalanDraft, setHafalanDraft] = useState("");
 
+  const pagiIds = useMemo(() => DZIKIR_PAGI.map((d) => d.id), []);
+  const petangIds = useMemo(() => DZIKIR_PETANG.map((d) => d.id), []);
+
   useEffect(() => {
     const r = getDay(today);
     setRecord(r);
     setHafalanDraft(r.hafalan ?? "");
-    setStreak(computeStreak(loadAll()));
+    setStreak(computeStreak(loadAll(), pagiIds, petangIds));
     setHour(new Date().getHours());
-  }, [today]);
+  }, [today, pagiIds, petangIds]);
 
   const isNight = hour >= 19 || hour < 4;
 
-  const toggle = (key: "zikirPagi" | "zikirPetang") => {
-    const next = updateDay(today, {
-      [key]: record[key] ? null : new Date().toISOString(),
-    });
+  const refresh = (next: DayRecord) => {
     setRecord(next);
-    setStreak(computeStreak(loadAll()));
+    setStreak(computeStreak(loadAll(), pagiIds, petangIds));
+  };
+
+  const toggleItem = (session: "pagi" | "petang", id: string) => {
+    const key = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
+    const current = record[key] ?? [];
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id];
+    refresh(updateDay(today, { [key]: next }));
+  };
+
+  const resetSession = (session: "pagi" | "petang") => {
+    const key = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
+    refresh(updateDay(today, { [key]: [] }));
   };
 
   const saveHafalan = () => {
-    const next = updateDay(today, { hafalan: hafalanDraft });
-    setRecord(next);
-    setStreak(computeStreak(loadAll()));
+    refresh(updateDay(today, { hafalan: hafalanDraft }));
   };
 
-  const complete =
-    !!record.zikirPagi && !!record.zikirPetang && !!(record.hafalan && record.hafalan.trim());
+  // Services
+  const services = record.services ?? [];
+  const addService = () => {
+    const entry: ServiceEntry = {
+      id: crypto.randomUUID(),
+      jenis: "",
+      pelanggan: "",
+      upah: 0,
+      selesai: false,
+    };
+    refresh(updateDay(today, { services: [...services, entry] }));
+  };
+  const updateService = (id: string, patch: Partial<ServiceEntry>) => {
+    refresh(
+      updateDay(today, {
+        services: services.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      }),
+    );
+  };
+  const removeService = (id: string) => {
+    refresh(updateDay(today, { services: services.filter((s) => s.id !== id) }));
+  };
+  const totalSelesai = services
+    .filter((s) => s.selesai)
+    .reduce((sum, s) => sum + (Number(s.upah) || 0), 0);
+
+  const pagiDone = isSessionComplete(record.zikirPagiChecked, pagiIds);
+  const petangDone = isSessionComplete(record.zikirPetangChecked, petangIds);
+  const hafalanDone = !!(record.hafalan && record.hafalan.trim());
+  const complete = pagiDone && petangDone && hafalanDone;
 
   return (
     <div className="min-h-screen bg-background">
@@ -87,20 +130,23 @@ function Home() {
           </div>
         </section>
 
-        {/* Zikir */}
-        <section className="mb-8 space-y-3">
-          <h2 className="px-1 text-sm font-medium text-muted-foreground">Zikir</h2>
-          <ZikirButton
-            label="Zikir Pagi"
-            time={record.zikirPagi}
-            onToggle={() => toggle("zikirPagi")}
-          />
-          <ZikirButton
-            label="Zikir Petang"
-            time={record.zikirPetang}
-            onToggle={() => toggle("zikirPetang")}
-          />
-        </section>
+        {/* Zikir Pagi */}
+        <ZikirChecklist
+          title="☀️ Zikir Pagi"
+          items={DZIKIR_PAGI}
+          checked={record.zikirPagiChecked ?? []}
+          onToggle={(id) => toggleItem("pagi", id)}
+          onReset={() => resetSession("pagi")}
+        />
+
+        {/* Zikir Petang */}
+        <ZikirChecklist
+          title="🌙 Zikir Petang"
+          items={DZIKIR_PETANG}
+          checked={record.zikirPetangChecked ?? []}
+          onToggle={(id) => toggleItem("petang", id)}
+          onReset={() => resetSession("petang")}
+        />
 
         {/* Hafalan */}
         <section className="mb-8">
@@ -124,7 +170,7 @@ function Home() {
             />
             <div className="mt-2 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
-                {record.hafalan && record.hafalan.trim() ? "Tersimpan" : "Otomatis tersimpan"}
+                {hafalanDone ? "Tersimpan" : "Otomatis tersimpan"}
               </span>
               <button
                 onClick={saveHafalan}
@@ -136,14 +182,100 @@ function Home() {
           </div>
         </section>
 
+        {/* Servis HP */}
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between px-1">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              📱 Servis &amp; Iklan HP Hari Ini
+            </h2>
+            <span className="text-xs text-muted-foreground">{formatDateID(today)}</span>
+          </div>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            {services.length === 0 && (
+              <p className="py-2 text-center text-sm text-muted-foreground">
+                Belum ada catatan hari ini.
+              </p>
+            )}
+            <ul className="space-y-3">
+              {services.map((s) => (
+                <li key={s.id} className="rounded-xl border bg-background p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 space-y-2">
+                      <input
+                        value={s.jenis}
+                        onChange={(e) => updateService(s.id, { jenis: e.target.value })}
+                        placeholder="Jenis pekerjaan (mis. Ganti LCD A52)"
+                        className="w-full rounded-md border bg-card px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <input
+                        value={s.pelanggan}
+                        onChange={(e) => updateService(s.id, { pelanggan: e.target.value })}
+                        placeholder="Nama pelanggan / keterangan"
+                        className="w-full rounded-md border bg-card px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Rp</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={s.upah || ""}
+                          onChange={(e) =>
+                            updateService(s.id, { upah: Number(e.target.value) || 0 })
+                          }
+                          placeholder="0"
+                          className="w-28 rounded-md border bg-card px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                        <button
+                          onClick={() => updateService(s.id, { selesai: !s.selesai })}
+                          className={`ml-auto rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                            s.selesai
+                              ? "bg-success text-success-foreground"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {s.selesai ? "Selesai ✓" : "Proses ⏳"}
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeService(s.id)}
+                      aria-label="Hapus"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6M14 11v6" />
+                        <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={addService}
+                className="rounded-lg border border-dashed border-primary/40 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/5"
+              >
+                + Tambah
+              </button>
+              <div className="text-sm">
+                <span className="text-muted-foreground">Total hari ini: </span>
+                <span className="font-semibold text-foreground">{formatRupiah(totalSelesai)}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Muhasabah recap */}
         {isNight && (
           <section className="rounded-2xl border border-secondary/30 bg-accent/40 p-5">
             <h2 className="font-serif text-lg font-semibold text-secondary">Rekap Hari Ini</h2>
             <ul className="mt-3 space-y-2 text-sm">
-              <RecapRow label="Zikir Pagi" done={!!record.zikirPagi} />
-              <RecapRow label="Zikir Petang" done={!!record.zikirPetang} />
-              <RecapRow label="Hafalan" done={!!(record.hafalan && record.hafalan.trim())} />
+              <RecapRow label="Zikir Pagi" done={pagiDone} />
+              <RecapRow label="Zikir Petang" done={petangDone} />
+              <RecapRow label="Hafalan" done={hafalanDone} />
             </ul>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               Tutup hari dengan tenang. Renungkan sebentar — apa yang patut disyukuri,
@@ -156,46 +288,111 @@ function Home() {
   );
 }
 
-function ZikirButton({
-  label,
-  time,
+function ZikirChecklist({
+  title,
+  items,
+  checked,
   onToggle,
+  onReset,
 }: {
-  label: string;
-  time?: string | null;
-  onToggle: () => void;
+  title: string;
+  items: DzikirItem[];
+  checked: string[];
+  onToggle: (id: string) => void;
+  onReset: () => void;
 }) {
-  const done = !!time;
+  const [open, setOpen] = useState(true);
+  const done = items.filter((i) => checked.includes(i.id)).length;
+  const total = items.length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
   return (
-    <button
-      onClick={onToggle}
-      className={`flex w-full items-center justify-between rounded-2xl border p-5 text-left shadow-sm transition-all active:scale-[0.98] ${
-        done
-          ? "border-success/40 bg-success text-success-foreground"
-          : "border-border bg-card text-foreground hover:border-primary/40"
-      }`}
-    >
-      <div>
-        <p className="text-lg font-medium">{label}</p>
-        <p className={`mt-0.5 text-xs ${done ? "text-success-foreground/80" : "text-muted-foreground"}`}>
-          {done ? `Selesai · ${formatTime(time!)}` : "Tap jika sudah"}
-        </p>
+    <section className="mb-8">
+      <div className="mb-3 flex items-center justify-between px-1">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 text-left"
+        >
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <span className="text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
+        </button>
+        <button
+          onClick={onReset}
+          className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Reset
+        </button>
       </div>
-      <div
-        className={`flex h-10 w-10 items-center justify-center rounded-full border ${
-          done ? "border-success-foreground/40 bg-success-foreground/10" : "border-border bg-background"
-        }`}
-        aria-hidden
-      >
-        {done ? (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : (
-          <span className="text-muted-foreground">○</span>
+      <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="text-xs font-medium text-muted-foreground">
+            {done} / {total} selesai
+          </span>
+        </div>
+        {open && (
+          <ul className="space-y-2">
+            {items.map((item) => {
+              const isChecked = checked.includes(item.id);
+              return (
+                <li
+                  key={item.id}
+                  className={`rounded-xl border p-3 transition-opacity ${
+                    isChecked ? "border-success/30 bg-success/5 opacity-70" : "border-border bg-background"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {item.nama}
+                        </p>
+                        <span className="shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground">
+                          {item.kali}x
+                        </span>
+                      </div>
+                      <p
+                        dir="rtl"
+                        lang="ar"
+                        className="mt-2 text-right text-xl leading-loose text-foreground"
+                        style={{ fontFamily: "'Amiri', serif" }}
+                      >
+                        {item.arab}
+                      </p>
+                      <p className="mt-1.5 text-xs italic leading-relaxed text-muted-foreground">
+                        {item.terjemahan}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => onToggle(item.id)}
+                      aria-label={isChecked ? "Batalkan" : "Tandai selesai"}
+                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all active:scale-95 ${
+                        isChecked
+                          ? "border-success bg-success text-success-foreground"
+                          : "border-border bg-background text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      {isChecked ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <span className="text-xs">○</span>
+                      )}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
-    </button>
+    </section>
   );
 }
 
