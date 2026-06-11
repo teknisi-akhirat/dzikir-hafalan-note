@@ -1,10 +1,23 @@
 // localStorage helpers for Yaumiyah tracker
 
+export type ServiceEntry = {
+  id: string;
+  jenis: string;
+  pelanggan: string;
+  upah: number;
+  selesai: boolean;
+};
+
 export type DayRecord = {
   date: string; // YYYY-MM-DD
-  zikirPagi?: string | null; // ISO timestamp or null
+  // legacy quick toggle (kept for migration); not used by new UI
+  zikirPagi?: string | null;
   zikirPetang?: string | null;
-  hafalan?: string; // free text
+  // new: checked dzikir item ids per session
+  zikirPagiChecked?: string[];
+  zikirPetangChecked?: string[];
+  hafalan?: string;
+  services?: ServiceEntry[];
 };
 
 const KEY = "yaumiyah:records:v1";
@@ -44,13 +57,27 @@ export function updateDay(date: string, patch: Partial<DayRecord>): DayRecord {
   return next;
 }
 
-export function computeStreak(records: Record<string, DayRecord>): number {
+export function isSessionComplete(
+  checked: string[] | undefined,
+  totalIds: string[],
+): boolean {
+  if (!checked || checked.length === 0) return false;
+  return totalIds.every((id) => checked.includes(id));
+}
+
+export function computeStreak(
+  records: Record<string, DayRecord>,
+  pagiIds: string[],
+  petangIds: string[],
+): number {
   let streak = 0;
   const d = new Date();
-  // If today not yet complete, start from yesterday
-  const todayRec = records[todayKey(d)];
   const isComplete = (r?: DayRecord) =>
-    !!r && !!r.zikirPagi && !!r.zikirPetang && !!r.hafalan && r.hafalan.trim().length > 0;
+    !!r &&
+    isSessionComplete(r.zikirPagiChecked, pagiIds) &&
+    isSessionComplete(r.zikirPetangChecked, petangIds) &&
+    !!(r.hafalan && r.hafalan.trim().length > 0);
+  const todayRec = records[todayKey(d)];
   if (!isComplete(todayRec)) {
     d.setDate(d.getDate() - 1);
   }
@@ -59,14 +86,6 @@ export function computeStreak(records: Record<string, DayRecord>): number {
     d.setDate(d.getDate() - 1);
   }
   return streak;
-}
-
-export function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
 }
 
 export function formatDateID(date: string): string {
@@ -80,4 +99,9 @@ export function formatDateID(date: string): string {
   } catch {
     return date;
   }
+}
+
+export function formatRupiah(n: number): string {
+  if (!Number.isFinite(n)) return "Rp 0";
+  return "Rp " + Math.round(n).toLocaleString("id-ID");
 }
