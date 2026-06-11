@@ -27,6 +27,7 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Fraunces", "Iowan Old Style", Georgia, serif;
 }
 
 :root {
