@@ -324,13 +324,17 @@ function ZikirChecklist({
   title,
   items,
   checked,
+  counters,
   onToggle,
+  onCounter,
   onReset,
 }: {
   title: string;
   items: DzikirItem[];
   checked: string[];
+  counters: Record<string, number>;
   onToggle: (id: string) => void;
+  onCounter: (id: string, target: number) => void;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(true);
