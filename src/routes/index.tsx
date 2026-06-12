@@ -60,8 +60,36 @@ function Home() {
   };
 
   const resetSession = (session: "pagi" | "petang") => {
-    const key = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
-    refresh(updateDay(today, { [key]: [] }));
+    refresh(updateDay(today, session === "pagi"
+      ? { zikirPagiChecked: [], zikirPagiCounters: {} }
+      : { zikirPetangChecked: [], zikirPetangCounters: {} }
+    ));
+  };
+
+  const incrementCounter = (session: "pagi" | "petang", id: string, target: number) => {
+    const currentCounters = session === "pagi"
+      ? (record.zikirPagiCounters ?? {})
+      : (record.zikirPetangCounters ?? {});
+    const currentChecked = session === "pagi"
+      ? (record.zikirPagiChecked ?? [])
+      : (record.zikirPetangChecked ?? []);
+
+    const currentCount = currentCounters[id] ?? 0;
+    if (currentCount >= target) return;
+
+    const nextCount = currentCount + 1;
+    const nextCounters = { ...currentCounters, [id]: nextCount };
+
+    const patch: Partial<DayRecord> = session === "pagi"
+      ? { zikirPagiCounters: nextCounters }
+      : { zikirPetangCounters: nextCounters };
+
+    if (nextCount >= target && !currentChecked.includes(id)) {
+      if (session === "pagi") patch.zikirPagiChecked = [...currentChecked, id];
+      else patch.zikirPetangChecked = [...currentChecked, id];
+    }
+
+    refresh(updateDay(today, patch));
   };
 
   const saveHafalan = () => {
@@ -135,7 +163,9 @@ function Home() {
           title="☀️ Zikir Pagi"
           items={DZIKIR_PAGI}
           checked={record.zikirPagiChecked ?? []}
+          counters={record.zikirPagiCounters ?? {}}
           onToggle={(id) => toggleItem("pagi", id)}
+          onCounter={(id, target) => incrementCounter("pagi", id, target)}
           onReset={() => resetSession("pagi")}
         />
 
@@ -144,7 +174,9 @@ function Home() {
           title="🌙 Zikir Petang"
           items={DZIKIR_PETANG}
           checked={record.zikirPetangChecked ?? []}
+          counters={record.zikirPetangCounters ?? {}}
           onToggle={(id) => toggleItem("petang", id)}
+          onCounter={(id, target) => incrementCounter("petang", id, target)}
           onReset={() => resetSession("petang")}
         />
 
@@ -292,13 +324,17 @@ function ZikirChecklist({
   title,
   items,
   checked,
+  counters,
   onToggle,
+  onCounter,
   onReset,
 }: {
   title: string;
   items: DzikirItem[];
   checked: string[];
+  counters: Record<string, number>;
   onToggle: (id: string) => void;
+  onCounter: (id: string, target: number) => void;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -367,6 +403,13 @@ function ZikirChecklist({
                       <p className="mt-1.5 text-xs italic leading-relaxed text-muted-foreground">
                         {item.terjemahan}
                       </p>
+                      {item.kali >= 50 && (
+                        <CounterBlock
+                          count={counters[item.id] ?? 0}
+                          target={item.kali}
+                          onIncrement={() => onCounter(item.id, item.kali)}
+                        />
+                      )}
                     </div>
                     <button
                       onClick={() => onToggle(item.id)}
@@ -404,5 +447,44 @@ function RecapRow({ label, done }: { label: string; done: boolean }) {
         {done ? "✓" : "✗"}
       </span>
     </li>
+  );
+}
+
+function CounterBlock({
+  count,
+  target,
+  onIncrement,
+}: {
+  count: number;
+  target: number;
+  onIncrement: () => void;
+}) {
+  const done = count >= target;
+  const pct = Math.min((count / target) * 100, 100);
+  return (
+    <div className="mt-3 flex flex-col items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
+      <div className="flex w-full items-center gap-2.5">
+        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className={`shrink-0 text-xs font-semibold ${done ? "text-success" : "text-primary"}`}>
+          {count} / {target}
+        </span>
+      </div>
+      <button
+        onClick={onIncrement}
+        disabled={done}
+        className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all active:scale-95 ${
+          done
+            ? "bg-success text-success-foreground"
+            : "bg-primary text-primary-foreground hover:opacity-90"
+        }`}
+      >
+        {done ? "Selesai ✓" : "+1 Kali"}
+      </button>
+    </div>
   );
 }
