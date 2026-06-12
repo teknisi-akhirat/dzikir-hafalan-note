@@ -403,6 +403,13 @@ function ZikirChecklist({
                       <p className="mt-1.5 text-xs italic leading-relaxed text-muted-foreground">
                         {item.terjemahan}
                       </p>
+                      {item.kali >= 50 && (
+                        <CounterBlock
+                          count={counters[item.id] ?? 0}
+                          target={item.kali}
+                          onIncrement={() => onCounter(item.id, item.kali)}
+                        />
+                      )}
                     </div>
                     <button
                       onClick={() => onToggle(item.id)}
