@@ -163,7 +163,9 @@ function Home() {
           title="☀️ Zikir Pagi"
           items={DZIKIR_PAGI}
           checked={record.zikirPagiChecked ?? []}
+          counters={record.zikirPagiCounters ?? {}}
           onToggle={(id) => toggleItem("pagi", id)}
+          onCounter={(id, target) => incrementCounter("pagi", id, target)}
           onReset={() => resetSession("pagi")}
         />
 
@@ -172,7 +174,9 @@ function Home() {
           title="🌙 Zikir Petang"
           items={DZIKIR_PETANG}
           checked={record.zikirPetangChecked ?? []}
+          counters={record.zikirPetangCounters ?? {}}
           onToggle={(id) => toggleItem("petang", id)}
+          onCounter={(id, target) => incrementCounter("petang", id, target)}
           onReset={() => resetSession("petang")}
         />
 
