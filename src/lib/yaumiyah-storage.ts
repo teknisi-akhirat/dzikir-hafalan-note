@@ -8,6 +8,8 @@ export type ServiceEntry = {
   selesai: boolean;
 };
 
+export type ZikirCounters = Record<string, number>;
+
 export type DayRecord = {
   date: string; // YYYY-MM-DD
   // legacy quick toggle (kept for migration); not used by new UI
@@ -16,6 +18,9 @@ export type DayRecord = {
   // new: checked dzikir item ids per session
   zikirPagiChecked?: string[];
   zikirPetangChecked?: string[];
+  // counters for high-count dzikir items
+  zikirPagiCounters?: ZikirCounters;
+  zikirPetangCounters?: ZikirCounters;
   hafalan?: string;
   services?: ServiceEntry[];
 };
