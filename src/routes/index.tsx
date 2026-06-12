@@ -60,8 +60,36 @@ function Home() {
   };
 
   const resetSession = (session: "pagi" | "petang") => {
-    const key = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
-    refresh(updateDay(today, { [key]: [] }));
+    refresh(updateDay(today, session === "pagi"
+      ? { zikirPagiChecked: [], zikirPagiCounters: {} }
+      : { zikirPetangChecked: [], zikirPetangCounters: {} }
+    ));
+  };
+
+  const incrementCounter = (session: "pagi" | "petang", id: string, target: number) => {
+    const currentCounters = session === "pagi"
+      ? (record.zikirPagiCounters ?? {})
+      : (record.zikirPetangCounters ?? {});
+    const currentChecked = session === "pagi"
+      ? (record.zikirPagiChecked ?? [])
+      : (record.zikirPetangChecked ?? []);
+
+    const currentCount = currentCounters[id] ?? 0;
+    if (currentCount >= target) return;
+
+    const nextCount = currentCount + 1;
+    const nextCounters = { ...currentCounters, [id]: nextCount };
+
+    const patch: Partial<DayRecord> = session === "pagi"
+      ? { zikirPagiCounters: nextCounters }
+      : { zikirPetangCounters: nextCounters };
+
+    if (nextCount >= target && !currentChecked.includes(id)) {
+      if (session === "pagi") patch.zikirPagiChecked = [...currentChecked, id];
+      else patch.zikirPetangChecked = [...currentChecked, id];
+    }
+
+    refresh(updateDay(today, patch));
   };
 
   const saveHafalan = () => {
