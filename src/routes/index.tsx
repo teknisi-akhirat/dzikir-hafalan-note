@@ -449,3 +449,42 @@ function RecapRow({ label, done }: { label: string; done: boolean }) {
     </li>
   );
 }
+
+function CounterBlock({
+  count,
+  target,
+  onIncrement,
+}: {
+  count: number;
+  target: number;
+  onIncrement: () => void;
+}) {
+  const done = count >= target;
+  const pct = Math.min((count / target) * 100, 100);
+  return (
+    <div className="mt-3 flex flex-col items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
+      <div className="flex w-full items-center gap-2.5">
+        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className={`shrink-0 text-xs font-semibold ${done ? "text-success" : "text-primary"}`}>
+          {count} / {target}
+        </span>
+      </div>
+      <button
+        onClick={onIncrement}
+        disabled={done}
+        className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all active:scale-95 ${
+          done
+            ? "bg-success text-success-foreground"
+            : "bg-primary text-primary-foreground hover:opacity-90"
+        }`}
+      >
+        {done ? "Selesai ✓" : "+1 Kali"}
+      </button>
+    </div>
+  );
+}
