@@ -153,7 +153,16 @@ function Home() {
           <h1 className="mt-1 font-serif text-3xl font-semibold text-foreground">
             {isNight ? "Bagaimana hari ini?" : "Bismillah, mari mulai."}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">{formatDateID(today)}</p>
+          <div className="mt-3" suppressHydrationWarning>
+            {hijriDate && (
+              <p className="text-2xl font-bold leading-tight text-foreground">{hijriDate}</p>
+            )}
+            {gregorianDate && (
+              <p className="mt-0.5 text-[0.65rem] leading-tight text-muted-foreground">
+                {gregorianDate}
+              </p>
+            )}
+          </div>
         </header>
 
         {/* Streak */}
