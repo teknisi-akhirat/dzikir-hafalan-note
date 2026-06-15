@@ -245,7 +245,7 @@ function Home() {
             <h2 className="text-sm font-medium text-muted-foreground">
               📱 Servis &amp; Iklan HP Hari Ini
             </h2>
-            <span className="text-xs text-muted-foreground">{formatDateID(today)}</span>
+            <span className="text-xs text-muted-foreground" suppressHydrationWarning>{gregorianDate}</span>
           </div>
           <div className="rounded-2xl border bg-card p-4 shadow-sm">
             {services.length === 0 && (
