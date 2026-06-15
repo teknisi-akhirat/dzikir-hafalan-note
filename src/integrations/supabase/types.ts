@@ -14,7 +14,84 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      dzikir_log: {
+        Row: {
+          counter: number | null
+          date: string
+          dzikir_key: string
+          id: string
+          is_done: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          counter?: number | null
+          date: string
+          dzikir_key: string
+          id?: string
+          is_done?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          counter?: number | null
+          date?: string
+          dzikir_key?: string
+          id?: string
+          is_done?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      hafalan_log: {
+        Row: {
+          content: string
+          date: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          date: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          date?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      servis_log: {
+        Row: {
+          content: string
+          created_at: string
+          date: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          date: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          date?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
