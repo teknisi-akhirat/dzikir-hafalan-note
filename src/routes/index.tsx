@@ -26,22 +26,38 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  const today = todayKey();
-  const [record, setRecord] = useState<DayRecord>({ date: today });
+  const [today, setToday] = useState("");
+  const [record, setRecord] = useState<DayRecord>({ date: "" });
   const [streak, setStreak] = useState(0);
   const [hour, setHour] = useState(12);
   const [hafalanDraft, setHafalanDraft] = useState("");
+  const [hijriDate, setHijriDate] = useState("");
+  const [gregorianDate, setGregorianDate] = useState("");
 
   const pagiIds = useMemo(() => DZIKIR_PAGI.map((d) => d.id), []);
   const petangIds = useMemo(() => DZIKIR_PETANG.map((d) => d.id), []);
 
   useEffect(() => {
-    const r = getDay(today);
+    const t = todayKey();
+    setToday(t);
+    const r = getDay(t);
     setRecord(r);
     setHafalanDraft(r.hafalan ?? "");
     setStreak(computeStreak(loadAll(), pagiIds, petangIds));
     setHour(new Date().getHours());
-  }, [today, pagiIds, petangIds]);
+    try {
+      setHijriDate(
+        new Intl.DateTimeFormat("id-ID-u-ca-islamic-umalqura", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(new Date()).replace(" H", "") + " H",
+      );
+    } catch {
+      setHijriDate("");
+    }
+    setGregorianDate(formatDateID(t));
+  }, [pagiIds, petangIds]);
 
   const isNight = hour >= 19 || hour < 4;
 
@@ -137,7 +153,16 @@ function Home() {
           <h1 className="mt-1 font-serif text-3xl font-semibold text-foreground">
             {isNight ? "Bagaimana hari ini?" : "Bismillah, mari mulai."}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">{formatDateID(today)}</p>
+          <div className="mt-3" suppressHydrationWarning>
+            {hijriDate && (
+              <p className="text-2xl font-bold leading-tight text-foreground">{hijriDate}</p>
+            )}
+            {gregorianDate && (
+              <p className="mt-0.5 text-[0.65rem] leading-tight text-muted-foreground">
+                {gregorianDate}
+              </p>
+            )}
+          </div>
         </header>
 
         {/* Streak */}
@@ -220,7 +245,7 @@ function Home() {
             <h2 className="text-sm font-medium text-muted-foreground">
               📱 Servis &amp; Iklan HP Hari Ini
             </h2>
-            <span className="text-xs text-muted-foreground">{formatDateID(today)}</span>
+            <span className="text-xs text-muted-foreground" suppressHydrationWarning>{gregorianDate}</span>
           </div>
           <div className="rounded-2xl border bg-card p-4 shadow-sm">
             {services.length === 0 && (

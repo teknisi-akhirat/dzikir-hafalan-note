@@ -135,7 +135,7 @@ export const DZIKIR_PAGI: DzikirItem[] = [
     arab: "لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ، وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
     terjemahan:
       "Tidak ada ilah (yang berhak disembah) kecuali Allah Yang Maha Esa, tiada sekutu bagi-Nya. Milik-Nya kerajaan dan bagi-Nya segala pujian, dan Dia Mahakuasa atas segala sesuatu. (HR. Ahmad — dianjurkan 10x atau 100x di pagi hari.)",
-    kali: 10,
+    kali: 100,
   },
   {
     id: "tasbih-makhluk",
