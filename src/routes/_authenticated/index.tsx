@@ -1,20 +1,27 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import {
-  computeStreak,
+  addService as dbAddService,
+  computeStreakDb,
+  emptyDay,
   formatDateID,
   formatRupiah,
-  getDay,
   isSessionComplete,
-  loadAll,
+  loadDay,
+  migrateLocalIfNeeded,
+  removeService as dbRemoveService,
+  resetDzikirSession,
+  saveHafalan as dbSaveHafalan,
   todayKey,
-  updateDay,
+  updateService as dbUpdateService,
+  upsertDzikir,
   type DayRecord,
   type ServiceEntry,
 } from "@/lib/yaumiyah-storage";
 import { DZIKIR_PAGI, DZIKIR_PETANG, type DzikirItem } from "@/lib/yaumiyah-dzikir";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
       { title: "Yaumiyah — Ibadah Tracker" },
@@ -26,24 +33,31 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  const navigate = useNavigate();
+  const [userId, setUserId] = useState<string | null>(null);
   const [today, setToday] = useState("");
-  const [record, setRecord] = useState<DayRecord>({ date: "" });
+  const [record, setRecord] = useState<DayRecord>(emptyDay(""));
   const [streak, setStreak] = useState(0);
   const [hour, setHour] = useState(12);
   const [hafalanDraft, setHafalanDraft] = useState("");
   const [hijriDate, setHijriDate] = useState("");
   const [gregorianDate, setGregorianDate] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const pagiIds = useMemo(() => DZIKIR_PAGI.map((d) => d.id), []);
   const petangIds = useMemo(() => DZIKIR_PETANG.map((d) => d.id), []);
 
+  const refreshStreak = useCallback(
+    async (uid: string) => {
+      const s = await computeStreakDb(uid, pagiIds, petangIds);
+      setStreak(s);
+    },
+    [pagiIds, petangIds],
+  );
+
   useEffect(() => {
     const t = todayKey();
     setToday(t);
-    const r = getDay(t);
-    setRecord(r);
-    setHafalanDraft(r.hafalan ?? "");
-    setStreak(computeStreak(loadAll(), pagiIds, petangIds));
     setHour(new Date().getHours());
     try {
       setHijriDate(
@@ -51,88 +65,103 @@ function Home() {
           day: "numeric",
           month: "long",
           year: "numeric",
-        }).format(new Date()).replace(" H", "") + " H",
+        })
+          .format(new Date())
+          .replace(" H", "") + " H",
       );
     } catch {
       setHijriDate("");
     }
     setGregorianDate(formatDateID(t));
-  }, [pagiIds, petangIds]);
+
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id ?? null;
+      setUserId(uid);
+      if (!uid) {
+        setLoading(false);
+        return;
+      }
+      await migrateLocalIfNeeded(uid);
+      const r = await loadDay(uid, t);
+      setRecord(r);
+      setHafalanDraft(r.hafalan);
+      await refreshStreak(uid);
+      setLoading(false);
+    })();
+  }, [refreshStreak]);
 
   const isNight = hour >= 19 || hour < 4;
 
-  const refresh = (next: DayRecord) => {
-    setRecord(next);
-    setStreak(computeStreak(loadAll(), pagiIds, petangIds));
-  };
-
-  const toggleItem = (session: "pagi" | "petang", id: string) => {
+  const toggleItem = async (session: "pagi" | "petang", id: string) => {
+    if (!userId) return;
     const key = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
-    const current = record[key] ?? [];
-    const next = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id];
-    refresh(updateDay(today, { [key]: next }));
+    const current = record[key];
+    const willCheck = !current.includes(id);
+    const next = willCheck ? [...current, id] : current.filter((x) => x !== id);
+    setRecord({ ...record, [key]: next });
+    await upsertDzikir(userId, today, session, id, { is_done: willCheck });
+    refreshStreak(userId);
   };
 
-  const resetSession = (session: "pagi" | "petang") => {
-    refresh(updateDay(today, session === "pagi"
-      ? { zikirPagiChecked: [], zikirPagiCounters: {} }
-      : { zikirPetangChecked: [], zikirPetangCounters: {} }
-    ));
+  const resetSession = async (session: "pagi" | "petang") => {
+    if (!userId) return;
+    setRecord({
+      ...record,
+      ...(session === "pagi"
+        ? { zikirPagiChecked: [], zikirPagiCounters: {} }
+        : { zikirPetangChecked: [], zikirPetangCounters: {} }),
+    });
+    await resetDzikirSession(userId, today, session);
+    refreshStreak(userId);
   };
 
-  const incrementCounter = (session: "pagi" | "petang", id: string, target: number) => {
-    const currentCounters = session === "pagi"
-      ? (record.zikirPagiCounters ?? {})
-      : (record.zikirPetangCounters ?? {});
-    const currentChecked = session === "pagi"
-      ? (record.zikirPagiChecked ?? [])
-      : (record.zikirPetangChecked ?? []);
-
-    const currentCount = currentCounters[id] ?? 0;
+  const incrementCounter = async (session: "pagi" | "petang", id: string, target: number) => {
+    if (!userId) return;
+    const countersKey = session === "pagi" ? "zikirPagiCounters" : "zikirPetangCounters";
+    const checkedKey = session === "pagi" ? "zikirPagiChecked" : "zikirPetangChecked";
+    const currentCount = record[countersKey][id] ?? 0;
     if (currentCount >= target) return;
-
     const nextCount = currentCount + 1;
-    const nextCounters = { ...currentCounters, [id]: nextCount };
-
-    const patch: Partial<DayRecord> = session === "pagi"
-      ? { zikirPagiCounters: nextCounters }
-      : { zikirPetangCounters: nextCounters };
-
-    if (nextCount >= target && !currentChecked.includes(id)) {
-      if (session === "pagi") patch.zikirPagiChecked = [...currentChecked, id];
-      else patch.zikirPetangChecked = [...currentChecked, id];
-    }
-
-    refresh(updateDay(today, patch));
+    const nextCounters = { ...record[countersKey], [id]: nextCount };
+    const shouldCheck = nextCount >= target && !record[checkedKey].includes(id);
+    const nextChecked = shouldCheck ? [...record[checkedKey], id] : record[checkedKey];
+    setRecord({ ...record, [countersKey]: nextCounters, [checkedKey]: nextChecked });
+    await upsertDzikir(userId, today, session, id, {
+      counter: nextCount,
+      ...(shouldCheck ? { is_done: true } : {}),
+    });
+    if (shouldCheck) refreshStreak(userId);
   };
 
-  const saveHafalan = () => {
-    refresh(updateDay(today, { hafalan: hafalanDraft }));
+  const saveHafalan = async () => {
+    if (!userId) return;
+    setRecord({ ...record, hafalan: hafalanDraft });
+    await dbSaveHafalan(userId, today, hafalanDraft);
+    refreshStreak(userId);
   };
 
   // Services
-  const services = record.services ?? [];
-  const addService = () => {
-    const entry: ServiceEntry = {
-      id: crypto.randomUUID(),
-      jenis: "",
-      pelanggan: "",
-      upah: 0,
-      selesai: false,
-    };
-    refresh(updateDay(today, { services: [...services, entry] }));
+  const services = record.services;
+  const addService = async () => {
+    if (!userId) return;
+    const blank = { jenis: "", pelanggan: "", upah: 0, selesai: false };
+    const created = await dbAddService(userId, today, blank);
+    if (created) setRecord({ ...record, services: [...services, created] });
   };
-  const updateService = (id: string, patch: Partial<ServiceEntry>) => {
-    refresh(
-      updateDay(today, {
-        services: services.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-      }),
-    );
+  const updateService = async (id: string, patch: Partial<ServiceEntry>) => {
+    const next = services.map((s) => (s.id === id ? { ...s, ...patch } : s));
+    setRecord({ ...record, services: next });
+    const entry = next.find((s) => s.id === id);
+    if (entry) {
+      const { id: _i, ...rest } = entry;
+      void _i;
+      await dbUpdateService(id, rest);
+    }
   };
-  const removeService = (id: string) => {
-    refresh(updateDay(today, { services: services.filter((s) => s.id !== id) }));
+  const removeService = async (id: string) => {
+    setRecord({ ...record, services: services.filter((s) => s.id !== id) });
+    await dbRemoveService(id);
   };
   const totalSelesai = services
     .filter((s) => s.selesai)
@@ -143,16 +172,39 @@ function Home() {
   const hafalanDone = !!(record.hafalan && record.hafalan.trim());
   const complete = pagiDone && petangDone && hafalanDone;
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Memuat…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-md px-5 pb-16 pt-8">
         <header className="mb-8">
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            {isNight ? "Muhasabah Malam" : "Yaumiyah"}
-          </p>
-          <h1 className="mt-1 font-serif text-3xl font-semibold text-foreground">
-            {isNight ? "Bagaimana hari ini?" : "Bismillah, mari mulai."}
-          </h1>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                {isNight ? "Muhasabah Malam" : "Yaumiyah"}
+              </p>
+              <h1 className="mt-1 font-serif text-3xl font-semibold text-foreground">
+                {isNight ? "Bagaimana hari ini?" : "Bismillah, mari mulai."}
+              </h1>
+            </div>
+            <button
+              onClick={signOut}
+              className="shrink-0 rounded-md border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Keluar
+            </button>
+          </div>
           <div className="mt-3" suppressHydrationWarning>
             {hijriDate && (
               <p className="text-2xl font-bold leading-tight text-foreground">{hijriDate}</p>
@@ -183,23 +235,21 @@ function Home() {
           </div>
         </section>
 
-        {/* Zikir Pagi */}
         <ZikirChecklist
           title="☀️ Zikir Pagi"
           items={DZIKIR_PAGI}
-          checked={record.zikirPagiChecked ?? []}
-          counters={record.zikirPagiCounters ?? {}}
+          checked={record.zikirPagiChecked}
+          counters={record.zikirPagiCounters}
           onToggle={(id) => toggleItem("pagi", id)}
           onCounter={(id, target) => incrementCounter("pagi", id, target)}
           onReset={() => resetSession("pagi")}
         />
 
-        {/* Zikir Petang */}
         <ZikirChecklist
           title="🌙 Zikir Petang"
           items={DZIKIR_PETANG}
-          checked={record.zikirPetangChecked ?? []}
-          counters={record.zikirPetangCounters ?? {}}
+          checked={record.zikirPetangChecked}
+          counters={record.zikirPetangCounters}
           onToggle={(id) => toggleItem("petang", id)}
           onCounter={(id, target) => incrementCounter("petang", id, target)}
           onReset={() => resetSession("petang")}
@@ -209,10 +259,7 @@ function Home() {
         <section className="mb-8">
           <div className="mb-3 flex items-center justify-between px-1">
             <h2 className="text-sm font-medium text-muted-foreground">Hafalan Hari Ini</h2>
-            <Link
-              to="/riwayat"
-              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-            >
+            <Link to="/riwayat" className="text-xs font-medium text-primary underline-offset-4 hover:underline">
               Riwayat →
             </Link>
           </div>
@@ -245,7 +292,9 @@ function Home() {
             <h2 className="text-sm font-medium text-muted-foreground">
               📱 Servis &amp; Iklan HP Hari Ini
             </h2>
-            <span className="text-xs text-muted-foreground" suppressHydrationWarning>{gregorianDate}</span>
+            <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+              {gregorianDate}
+            </span>
           </div>
           <div className="rounded-2xl border bg-card p-4 shadow-sm">
             {services.length === 0 && (
@@ -325,7 +374,6 @@ function Home() {
           </div>
         </section>
 
-        {/* Muhasabah recap */}
         {isNight && (
           <section className="rounded-2xl border border-secondary/30 bg-accent/40 p-5">
             <h2 className="font-serif text-lg font-semibold text-secondary">Rekap Hari Ini</h2>
@@ -370,10 +418,7 @@ function ZikirChecklist({
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center justify-between px-1">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2 text-left"
-        >
+        <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 text-left">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <span className="text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
         </button>
@@ -387,10 +432,7 @@ function ZikirChecklist({
       <div className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center gap-3">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-primary transition-all"
-              style={{ width: `${pct}%` }}
-            />
+            <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
           </div>
           <span className="text-xs font-medium text-muted-foreground">
             {done} / {total} selesai
@@ -410,9 +452,7 @@ function ZikirChecklist({
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          {item.nama}
-                        </p>
+                        <p className="truncate text-sm font-semibold text-foreground">{item.nama}</p>
                         <span className="shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground">
                           {item.kali}x
                         </span>
@@ -468,9 +508,7 @@ function RecapRow({ label, done }: { label: string; done: boolean }) {
   return (
     <li className="flex items-center justify-between">
       <span className="text-foreground">{label}</span>
-      <span className={done ? "text-success" : "text-muted-foreground"}>
-        {done ? "✓" : "✗"}
-      </span>
+      <span className={done ? "text-success" : "text-muted-foreground"}>{done ? "✓" : "✗"}</span>
     </li>
   );
 }
@@ -490,10 +528,7 @@ function CounterBlock({
     <div className="mt-3 flex flex-col items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
       <div className="flex w-full items-center gap-2.5">
         <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${pct}%` }}
-          />
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
         <span className={`shrink-0 text-xs font-semibold ${done ? "text-success" : "text-primary"}`}>
           {count} / {target}
@@ -503,9 +538,7 @@ function CounterBlock({
         onClick={onIncrement}
         disabled={done}
         className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-          done
-            ? "bg-success text-success-foreground"
-            : "bg-primary text-primary-foreground hover:opacity-90"
+          done ? "bg-success text-success-foreground" : "bg-primary text-primary-foreground hover:opacity-90"
         }`}
       >
         {done ? "Selesai ✓" : "+1 Kali"}

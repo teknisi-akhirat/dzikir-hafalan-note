@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { formatDateID, loadAll, type DayRecord } from "@/lib/yaumiyah-storage";
+import { supabase } from "@/integrations/supabase/client";
+import { formatDateID, loadAllHafalan } from "@/lib/yaumiyah-storage";
 
-export const Route = createFileRoute("/riwayat")({
+export const Route = createFileRoute("/_authenticated/riwayat")({
   head: () => ({
     meta: [
       { title: "Riwayat Hafalan — Yaumiyah" },
@@ -13,14 +14,17 @@ export const Route = createFileRoute("/riwayat")({
 });
 
 function Riwayat() {
-  const [items, setItems] = useState<DayRecord[]>([]);
+  const [items, setItems] = useState<{ date: string; content: string }[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const all = loadAll();
-    const list = Object.values(all)
-      .filter((r) => r.hafalan && r.hafalan.trim().length > 0)
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-    setItems(list);
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+      const list = await loadAllHafalan(data.user.id);
+      setItems(list);
+      setLoading(false);
+    })();
   }, []);
 
   return (
@@ -31,11 +35,11 @@ function Riwayat() {
         </Link>
         <h1 className="mt-4 font-serif text-3xl font-semibold text-foreground">Riwayat Hafalan</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {items.length} hari tercatat
+          {loading ? "Memuat…" : `${items.length} hari tercatat`}
         </p>
 
         <div className="mt-6 space-y-4">
-          {items.length === 0 && (
+          {!loading && items.length === 0 && (
             <p className="rounded-2xl border bg-card p-6 text-center text-sm text-muted-foreground">
               Belum ada hafalan. Mulai dari satu ayat hari ini.
             </p>
@@ -46,7 +50,7 @@ function Riwayat() {
                 {formatDateID(r.date)}
               </p>
               <p className="mt-2 whitespace-pre-wrap text-base leading-relaxed text-foreground">
-                {r.hafalan}
+                {r.content}
               </p>
             </article>
           ))}
