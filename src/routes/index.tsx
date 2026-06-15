@@ -26,22 +26,38 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  const today = todayKey();
-  const [record, setRecord] = useState<DayRecord>({ date: today });
+  const [today, setToday] = useState("");
+  const [record, setRecord] = useState<DayRecord>({ date: "" });
   const [streak, setStreak] = useState(0);
   const [hour, setHour] = useState(12);
   const [hafalanDraft, setHafalanDraft] = useState("");
+  const [hijriDate, setHijriDate] = useState("");
+  const [gregorianDate, setGregorianDate] = useState("");
 
   const pagiIds = useMemo(() => DZIKIR_PAGI.map((d) => d.id), []);
   const petangIds = useMemo(() => DZIKIR_PETANG.map((d) => d.id), []);
 
   useEffect(() => {
-    const r = getDay(today);
+    const t = todayKey();
+    setToday(t);
+    const r = getDay(t);
     setRecord(r);
     setHafalanDraft(r.hafalan ?? "");
     setStreak(computeStreak(loadAll(), pagiIds, petangIds));
     setHour(new Date().getHours());
-  }, [today, pagiIds, petangIds]);
+    try {
+      setHijriDate(
+        new Intl.DateTimeFormat("id-ID-u-ca-islamic-umalqura", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(new Date()).replace(" H", "") + " H",
+      );
+    } catch {
+      setHijriDate("");
+    }
+    setGregorianDate(formatDateID(t));
+  }, [pagiIds, petangIds]);
 
   const isNight = hour >= 19 || hour < 4;
 
