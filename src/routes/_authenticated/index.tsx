@@ -20,6 +20,8 @@ import {
   type ServiceEntry,
 } from "@/lib/yaumiyah-storage";
 import { DZIKIR_PAGI, DZIKIR_PETANG, type DzikirItem } from "@/lib/yaumiyah-dzikir";
+import { formatHijriID } from "@/lib/hijri";
+
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -60,18 +62,11 @@ function Home() {
     setToday(t);
     setHour(new Date().getHours());
     try {
-      setHijriDate(
-        new Intl.DateTimeFormat("id-ID-u-ca-islamic-umalqura", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })
-          .format(new Date())
-          .replace(" H", "") + " H",
-      );
+      setHijriDate(formatHijriID(new Date()));
     } catch {
       setHijriDate("");
     }
+
     setGregorianDate(formatDateID(t));
 
     (async () => {
