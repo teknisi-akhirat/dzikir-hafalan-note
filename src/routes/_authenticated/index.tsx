@@ -20,6 +20,8 @@ import {
   type ServiceEntry,
 } from "@/lib/yaumiyah-storage";
 import { DZIKIR_PAGI, DZIKIR_PETANG, type DzikirItem } from "@/lib/yaumiyah-dzikir";
+import { formatHijriID } from "@/lib/hijri";
+
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
